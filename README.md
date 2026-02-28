@@ -4,7 +4,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109.0-009688.svg)](https://fastapi.tiangolo.com/)
 
-**OmniServe AI** is a professional, context-aware **Voice Customer Support Platform** designed for real-time engagement. Built with **FastAPI**, **Google Gemini**, and a sleek **Enterprise Modern UI**, this system provides human-like interaction with persistent context and real-time analytics.
+**OmniServe AI** is a professional, context-aware **Voice Customer Support Platform** designed for real-time engagement. Built with **FastAPI**, **Google Gemini**, **Groq (Llama 3.3)**, and a sleek **Enterprise Modern UI**, this system provides human-like interaction with persistent context, real-time web search grounding, and analytics.
 
 ---
 
@@ -15,29 +15,31 @@ The system follows a modern decoupled architecture, ensuring scalability and eas
 ```mermaid
 graph TD
     A[Frontend: Vanilla JS/HTML5] -->|HTTP POST /chat| B[Backend: FastAPI]
-    B -->|Query Context| C{AI Engine: Google Gemini}
+    B -->|Groq Selected| C{AI Engine: Groq Llama 3.3}
+    B -->|Gemini Selected| D{AI Engine: Google Gemini}
+    C -->|Web Search Needed| E[DuckDuckGo Search Module]
+    D -->|Built-in Grounding| F[Google Search Grounding]
+    E --> C
     C -->|AI Response| B
-    B -->|Update Analytics| D[(In-Memory Interaction Store)]
+    D -->|AI Response| B
+    B -->|Update Analytics| G[(In-Memory Interaction Store)]
     B -->|JSON Response| A
-    A -->|TTS| E[Voice Output: Web Speech API]
+    A -->|TTS| H[Voice Output: Web Speech API]
 ```
-
-### Components:
-1.  **Frontend**: A modern, responsive interface using CSS Grid/Flexbox and Vanilla JS. It handles Voice-to-Text (STT) and Text-to-Voice (TTS) directly in the browser.
-2.  **API Layer (FastAPI)**: A high-performance asynchronous API that handles request routing, static file serving, and analytics tracking.
-3.  **AI Orchestrator**: Managed by `CustomerSupportAgent`, which injects system personas, manages user-specific message history, and interfaces with the Google Gemini API.
-4.  **Analytics Tracking**: A dedicated module that captures performance metrics (response time, query length) and user activity.
 
 ---
 
 ## 🚀 Key Features
 
+-   **🧠 Dual AI Providers**: Flexibly switch between **Google Gemini 2.0 Flash** and **Groq (Llama 3.3)** directly from the UI.
+-   **🌍 Real-Time Web Search Grounding**: 
+    - Gemini utilizes native **Google Search Grounding**.
+    - Groq utilizes a custom-built **DuckDuckGo Web Search module** to fetch real-time data for product pricing, releases (like iPhone 17), and current events.
 -   **🎙️ Voice-First Interaction**: Integrated Speech-to-Text for input and Text-to-Speech (TTS) for natural-sounding AI responses.
--   **🧠 Persistent Context**: Remembers conversation history for each user to maintain a coherent dialogue.
-*   **🌐 Bengali & English Support**: Fully multilingual capabilities for both input and output.
--   **📈 Real-time Analytics**: Built-in dashboard to track total interactions, unique users, and average response times.
--   **💼 Enterprise Modern UI**: A clean, professional theme designed for corporate environments with Indigo accents and a polished layout.
--   **🧪 Synthetic Data**: Generate mock customer profiles (orders, history) on-the-fly to test AI capabilities.
+-   **🗣️ Bengali & English Support**: Fully multilingual capabilities for both voice input and audio output.
+-   **💭 Persistent Smart Context**: Remembers conversation history continuously across messages without dropping context.
+-   **📈 Real-time Analytics**: Built-in dashboard to track total interactions, unique users, empty queries, and average response times.
+-   **☁️ Cloud-Ready Deployment**: Includes dynamic port bindings perfect for 1-click deployments on platforms like **Render**.
 
 ---
 
@@ -45,7 +47,8 @@ graph TD
 
 -   **Language**: Python 3.12+
 -   **Web Framework**: FastAPI
--   **AI Inference**: Google Gemini (Flash-latest)
+-   **AI Inference**: Google API (`google-genai`), Groq API (`groq`)
+-   **Web Search Engine**: DuckDuckGo Search (`duckduckgo-search`)
 -   **Frontend**: HTML5, CSS3 (Vanilla), JavaScript (ES6+)
 -   **Voice**: Web Speech API
 -   **Containerization**: Docker & Docker Compose
@@ -57,6 +60,7 @@ graph TD
 ### 1. Prerequisites
 - Python 3.12+
 - Google Gemini API Key ([Get it here](https://aistudio.google.com/))
+- Groq API Key ([Get it here](https://console.groq.com/)) 
 - Docker Desktop (Optional)
 
 ### 2. Local Development
@@ -68,7 +72,9 @@ graph TD
 2.  **Configuration**:
     Create a `.env` file in the root directory:
     ```env
+    DEFAULT_PROVIDER=groq
     GOOGLE_API_KEY=your_gemini_key_here
+    GROQ_API_KEY=your_groq_key_here
     ```
 3.  **Environment Setup**:
     ```bash
@@ -82,7 +88,13 @@ graph TD
     ```
     Visit: `http://localhost:8000`
 
-### 3. Running with Docker
+### 3. Deploying to Render
+This application is pre-configured for Render.
+1. Connect your GitHub repository to Render.
+2. Choose **Web Service** -> **Docker**.
+3. Render will automatically detect the `Dockerfile` and dynamically bind the port.
+
+### 4. Running with Docker Locally
 ```bash
 docker-compose up --build
 ```
