@@ -29,12 +29,21 @@ app.add_middleware(
 
 # Initialize Agent
 agent = None
+current_api_key = None
 
-def get_agent(api_key: Optional[str] = None):
-    global agent
-    if agent is None or api_key:
+def get_agent(api_key: Optional[str] = None, provider: Optional[str] = None):
+    global agent, current_api_key
+    
+    needs_new_agent = (
+        agent is None or 
+        (api_key and api_key != current_api_key) or 
+        (provider and agent.provider != provider)
+    )
+    
+    if needs_new_agent:
         try:
-            agent = CustomerSupportAgent(api_key=api_key)
+            agent = CustomerSupportAgent(api_key=api_key, provider=provider)
+            current_api_key = api_key
         except Exception as e:
             logger.error(f"Failed to initialize agent: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -44,10 +53,12 @@ class ChatQuery(BaseModel):
     query: str
     user_id: str
     api_key: Optional[str] = None
+    provider: Optional[str] = None
 
 class ProfileRequest(BaseModel):
     user_id: str
     api_key: Optional[str] = None
+    provider: Optional[str] = None
 
 @app.get("/")
 async def read_index():
@@ -61,7 +72,7 @@ async def favicon():
 async def chat(data: ChatQuery):
     try:
         start_time = time.time()
-        current_agent = get_agent(data.api_key)
+        current_agent = get_agent(data.api_key, data.provider)
         response = current_agent.handle_query(data.query, user_id=data.user_id)
         response_time = time.time() - start_time
         
@@ -84,7 +95,7 @@ async def chat(data: ChatQuery):
 @app.post("/generate-profile")
 async def generate_profile(data: ProfileRequest):
     try:
-        current_agent = get_agent(data.api_key)
+        current_agent = get_agent(data.api_key, data.provider)
         profile = current_agent.generate_synthetic_profile(data.user_id)
         if profile:
             return profile

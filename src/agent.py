@@ -3,26 +3,12 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
-from google import genai
-from google.genai import types
-
 from src.config import settings
 from src.utils import logger
+from src.web_search import search_web, format_search_context, needs_web_search
 
-class CustomerSupportAgent:
-    """Core logic for the AI Customer Support Agent with simple memory (using Gemini + Google Search Grounding)."""
-    
-    def __init__(self, api_key: Optional[str] = None):
-        # Use provided API key or fallback to settings
-        key = api_key or settings.GOOGLE_API_KEY
-        if not key:
-            raise ValueError("Google API Key is required for Gemini.")
-        
-        # Initialize the new Google GenAI client
-        self.client = genai.Client(api_key=key)
-        
-        # System Instruction for Persona
-        self.system_instruction = """You are an expert customer support AI for TechGadgets.com, a premium online electronics retailer.
+# System instruction shared by both providers
+SYSTEM_INSTRUCTION = """You are an expert customer support AI for TechGadgets.com, a premium online electronics retailer.
 
 Language Support:
 - You must respond ONLY in the same language the user uses.
@@ -41,91 +27,115 @@ Your capabilities:
 - Troubleshoot technical issues
 - Answer questions about warranties and shipping
 - Remember conversation context to provide personalized help
-- You have access to Google Search to find up-to-date product information, news, and pricing
+- You have access to real-time web search results to provide up-to-date product information
+
+IMPORTANT - Current Product Knowledge (as of March 2026):
+Your training data may be outdated. ALWAYS use the following up-to-date information when answering about recent products:
+- Apple iPhone 17 series: RELEASED in September 2025. Models include iPhone 17, iPhone 17 Air, iPhone 17 Pro, and iPhone 17 Pro Max. Available for purchase now at TechGadgets.com.
+- Samsung Galaxy S25 series: RELEASED in January 2025.
+- Google Pixel 9 series: RELEASED in August 2024.
+
+CRITICAL RULE: If a customer asks about any of the products listed above, you MUST use the information provided here. Do NOT say a product "has not been released" or "is not available yet" if it is listed above as RELEASED.
 
 Guidelines:
 - Keep responses concise but complete (2-3 sentences ideal)
 - Use a conversational, natural tone
-- When answering about product availability, releases, or current pricing, rely on Google Search results for the most accurate and up-to-date information
+- When web search results are provided, use them to give accurate and current information
 - If you don't have specific information, acknowledge it honestly and offer to help in other ways
 - Always end with a helpful follow-up question or offer when appropriate"""
 
-        self.model_name = settings.GEMINI_MODEL
+
+class CustomerSupportAgent:
+    """Core logic for the AI Customer Support Agent with dual provider support (Gemini + Groq)."""
+    
+    def __init__(self, api_key: Optional[str] = None, provider: Optional[str] = None):
+        self.provider = provider or settings.DEFAULT_PROVIDER
         self.app_id = settings.APP_ID
-        
-        # Google Search grounding tool
-        self.google_search_tool = types.Tool(
-            google_search=types.GoogleSearch()
-        )
-        
-        # Simple in-memory storage for conversations
         self.conversations: Dict[str, List[Dict[str, str]]] = {}
-        logger.info("Agent initialized successfully with Gemini + Google Search Grounding.")
+        
+        if self.provider == "gemini":
+            self._init_gemini(api_key)
+        elif self.provider == "groq":
+            self._init_groq(api_key)
+        else:
+            raise ValueError(f"Unknown provider: {self.provider}. Use 'gemini' or 'groq'.")
+        
+        logger.info(f"Agent initialized successfully with provider: {self.provider}")
+
+    def _init_gemini(self, api_key: Optional[str] = None):
+        """Initialize Gemini with Google Search grounding."""
+        from google import genai
+        from google.genai import types
+        
+        key = api_key or settings.GOOGLE_API_KEY
+        if not key:
+            raise ValueError("Google API Key is required for Gemini.")
+        
+        self.client = genai.Client(api_key=key)
+        self.model_name = settings.GEMINI_MODEL
+        self.google_search_tool = types.Tool(google_search=types.GoogleSearch())
+
+    def _init_groq(self, api_key: Optional[str] = None):
+        """Initialize Groq with web search grounding."""
+        from groq import Groq
+        
+        key = api_key or settings.GROQ_API_KEY
+        if not key:
+            raise ValueError("Groq API Key is required.")
+        
+        self.groq_client = Groq(api_key=key)
+        self.groq_model = settings.GROQ_MODEL
 
     def handle_query(self, query: str, user_id: str) -> str:
-        """Handles a customer query using Gemini with Google Search grounding."""
+        """Routes to the appropriate provider's handler."""
+        if self.provider == "gemini":
+            return self._handle_gemini(query, user_id)
+        else:
+            return self._handle_groq(query, user_id)
+
+    def _handle_gemini(self, query: str, user_id: str) -> str:
+        """Handle query using Gemini with Google Search grounding."""
+        from google.genai import types
+        
         try:
-            logger.info(f"Handling query for user {user_id}: {query[:50]}...")
+            logger.info(f"[Gemini] Handling query for user {user_id}: {query[:50]}...")
             
             if user_id not in self.conversations:
                 self.conversations[user_id] = []
             
-            # Build conversation history as Content objects for the new SDK
+            # Build conversation history
             history_contents = []
             history_slice = self.conversations[user_id][-10:]
             
             for msg in history_slice:
                 role = "user" if msg["role"] == "user" else "model"
-                # Ensure we start with 'user' and roles alternate
                 if not history_contents:
                     if role != "user":
                         continue
                 elif history_contents[-1].role == role:
-                    # If same role as last, merge content
                     existing_text = history_contents[-1].parts[0].text
                     history_contents[-1].parts[0] = types.Part(text=f"{existing_text}\n{msg['content']}")
                     continue
                 
                 history_contents.append(
-                    types.Content(
-                        role=role,
-                        parts=[types.Part(text=msg["content"])]
-                    )
+                    types.Content(role=role, parts=[types.Part(text=msg["content"])])
                 )
 
-            # Add the current user query
             history_contents.append(
-                types.Content(
-                    role="user",
-                    parts=[types.Part(text=query)]
-                )
+                types.Content(role="user", parts=[types.Part(text=query)])
             )
             
-            # Configure with Google Search grounding and system instruction
             config = types.GenerateContentConfig(
-                system_instruction=self.system_instruction,
+                system_instruction=SYSTEM_INSTRUCTION,
                 tools=[self.google_search_tool],
                 safety_settings=[
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_HARASSMENT",
-                        threshold="BLOCK_NONE"
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_HATE_SPEECH",
-                        threshold="BLOCK_NONE"
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        threshold="BLOCK_NONE"
-                    ),
-                    types.SafetySetting(
-                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                        threshold="BLOCK_NONE"
-                    ),
+                    types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="BLOCK_NONE"),
+                    types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_NONE"),
                 ]
             )
 
-            # Generate response with grounding
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=history_contents,
@@ -134,14 +144,75 @@ Guidelines:
             
             answer = response.text
             
-            # Log grounding metadata if available
+            # Log grounding metadata
             if response.candidates and response.candidates[0].grounding_metadata:
                 metadata = response.candidates[0].grounding_metadata
                 if metadata.web_search_queries:
-                    logger.info(f"Google Search queries used: {metadata.web_search_queries}")
+                    logger.info(f"Google Search queries: {metadata.web_search_queries}")
                 if metadata.grounding_chunks:
                     sources = [chunk.web.title for chunk in metadata.grounding_chunks if chunk.web]
                     logger.info(f"Grounding sources: {sources}")
+            
+            self.conversations[user_id].append({"role": "user", "content": query})
+            self.conversations[user_id].append({"role": "assistant", "content": answer})
+            
+            return answer
+            
+        except Exception as e:
+            return self._handle_error(e)
+
+    def _handle_groq(self, query: str, user_id: str) -> str:
+        """Handle query using Groq with DuckDuckGo web search grounding."""
+        try:
+            logger.info(f"[Groq] Handling query for user {user_id}: {query[:50]}...")
+            
+            if user_id not in self.conversations:
+                self.conversations[user_id] = []
+            
+            # Build messages for Groq (OpenAI-compatible format)
+            messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+            
+            # Add conversation history (last 10 messages)
+            history_slice = self.conversations[user_id][-10:]
+            for msg in history_slice:
+                role = msg["role"]
+                if role == "assistant":
+                    role = "assistant"
+                messages.append({"role": role, "content": msg["content"]})
+            
+            # Perform web search if the query needs current information
+            search_context = ""
+            if needs_web_search(query):
+                logger.info(f"Query needs web search: {query[:50]}...")
+                search_results = search_web(query, max_results=5)
+                search_context = format_search_context(search_results)
+                
+                if search_context:
+                    logger.info(f"Web search returned {len(search_results)} results")
+                    # Add search context as a system message right before the user query
+                    messages.append({
+                        "role": "system",
+                        "content": search_context
+                    })
+            
+            # Add current user query
+            messages.append({"role": "user", "content": query})
+            
+            # Call Groq API
+            response = self.groq_client.chat.completions.create(
+                model=self.groq_model,
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1024,
+            )
+            
+            answer = response.choices[0].message.content
+            
+            # Log search usage
+            if search_context:
+                logger.info(f"[Groq] Response generated with web search grounding")
+            else:
+                logger.info(f"[Groq] Response generated without web search")
             
             # Update internal memory
             self.conversations[user_id].append({"role": "user", "content": query})
@@ -150,17 +221,22 @@ Guidelines:
             return answer
             
         except Exception as e:
-            error_trace = traceback.format_exc()
-            logger.error(f"Gemini Error: {str(e)}\n{error_trace}")
-            # Log to file for deep inspection
-            with open("error.log", "a", encoding="utf-8") as f:
-                f.write(f"\n[{datetime.now()}] ERROR: {str(e)}\n{error_trace}\n")
-            
-            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                return "⚠️ Rate limit exceeded! Your free tier quota is used up. Please wait a few minutes and try again, or enable billing at https://ai.google.dev. (⚠️ আপনার ফ্রি টিয়ার কোটা শেষ হয়ে গেছে। কয়েক মিনিট অপেক্ষা করুন।)"
-            if "401" in str(e) or "API_KEY_INVALID" in str(e):
-                return "Error: Invalid Gemini API Key. Please check your key and try again. (ত্রুটি: ভুল Gemini API কী। দয়া করে আপনার কী পরীক্ষা করুন এবং আবার চেষ্টা করুন।)"
-            return f"I encountered an error with the AI: {str(e)}. Please check the logs."
+            return self._handle_error(e)
+
+    def _handle_error(self, e: Exception) -> str:
+        """Centralized error handling for both providers."""
+        error_trace = traceback.format_exc()
+        logger.error(f"AI Error: {str(e)}\n{error_trace}")
+        
+        with open("error.log", "a", encoding="utf-8") as f:
+            f.write(f"\n[{datetime.now()}] ERROR: {str(e)}\n{error_trace}\n")
+        
+        error_str = str(e)
+        if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "rate_limit" in error_str.lower():
+            return "⚠️ Rate limit exceeded! Please wait a few minutes and try again. (⚠️ রেট লিমিট অতিক্রম হয়েছে। কয়েক মিনিট অপেক্ষা করুন।)"
+        if "401" in error_str or "API_KEY_INVALID" in error_str or "invalid_api_key" in error_str.lower():
+            return "Error: Invalid API Key. Please check your key and try again. (ত্রুটি: ভুল API কী। দয়া করে পরীক্ষা করুন।)"
+        return f"I encountered an error: {str(e)}. Please check the logs."
 
     def get_user_memories(self, user_id: str) -> List[str]:
         """Retrieves conversation history for a user."""
@@ -186,18 +262,30 @@ Guidelines:
             - 2 past orders and 2 previous support interactions.
             Return ONLY valid JSON."""
 
-            config = types.GenerateContentConfig(
-                system_instruction=self.system_instruction,
-            )
+            if self.provider == "gemini":
+                from google.genai import types
+                config = types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                )
+                response = self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                content = response.text
+            else:
+                response = self.groq_client.chat.completions.create(
+                    model=self.groq_model,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant. Return ONLY valid JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1024,
+                )
+                content = response.choices[0].message.content
 
-            response = self.client.models.generate_content(
-                model=self.model_name,
-                contents=prompt,
-                config=config,
-            )
-
-            # Clean the response in case Gemini adds markdown formatting
-            content = response.text
+            # Clean markdown formatting
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
@@ -205,7 +293,6 @@ Guidelines:
 
             customer_data = json.loads(content)
             
-            # Store profile in conversation as context
             profile_msg = f"Customer Profile: {json.dumps(customer_data)}"
             if user_id not in self.conversations:
                 self.conversations[user_id] = []

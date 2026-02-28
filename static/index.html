@@ -28,8 +28,14 @@
             </div>
 
             <div class="settings-group">
-                <label for="apiKey">Google API Key</label>
-                <input type="password" id="apiKey" placeholder="AIzaSy...">
+                <label for="providerSelect">AI Provider</label>
+                <select id="providerSelect" class="lang-select">
+                    <option value="groq">Groq (Llama 3.3)</option>
+                    <option value="gemini">Google Gemini</option>
+                </select>
+
+                <label for="apiKey" id="apiKeyLabel">Groq API Key</label>
+                <input type="password" id="apiKey" placeholder="gsk_...">
 
                 <label for="userId">Customer ID</label>
                 <input type="text" id="userId" placeholder="cust_001">

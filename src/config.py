@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     APP_NAME: str = "OmniServe AI"
     APP_ID: str = "omniserve-voice-platform"
     
+    # Provider Selection: "gemini" or "groq"
+    DEFAULT_PROVIDER: str = os.getenv("DEFAULT_PROVIDER", "groq")
+    
     # Groq Configuration
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     GROQ_MODEL: str = "llama-3.3-70b-versatile"

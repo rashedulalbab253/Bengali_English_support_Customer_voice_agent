@@ -15,6 +15,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const micBtn = document.getElementById('micBtn');
     const autoSpeakCheck = document.getElementById('autoSpeak');
     const languageSelect = document.getElementById('languageSelect');
+    const providerSelect = document.getElementById('providerSelect');
+    const apiKeyLabel = document.getElementById('apiKeyLabel');
+
+    if (providerSelect && apiKeyLabel && apiKeyInput) {
+        providerSelect.addEventListener('change', () => {
+            if (providerSelect.value === 'gemini') {
+                apiKeyLabel.textContent = 'Google API Key';
+                apiKeyInput.placeholder = 'AIzaSy...';
+            } else {
+                apiKeyLabel.textContent = 'Groq API Key';
+                apiKeyInput.placeholder = 'gsk_...';
+            }
+        });
+    }
 
     let initialized = false;
     let isRecording = false;
@@ -177,9 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const apiKey = apiKeyInput.value.trim();
         const userId = userIdInput.value.trim();
         const lang = languageSelect.value;
+        const provider = providerSelect ? providerSelect.value : 'groq';
 
         if (!apiKey || !userId) {
-            alert('Please provide both API Key and Customer ID');
+            alert(`Please provide both ${provider === 'gemini' ? 'Google' : 'Groq'} API Key and Customer ID`);
             return;
         }
 
@@ -212,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: text, user_id: userId, api_key: apiKey })
+                body: JSON.stringify({ query: text, user_id: userId, api_key: apiKey, provider: providerSelect ? providerSelect.value : 'groq' })
             });
             const data = await response.json();
             console.log("Server Response:", data);
@@ -244,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch('/generate-profile', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: userId, api_key: apiKey })
+                body: JSON.stringify({ user_id: userId, api_key: apiKey, provider: providerSelect ? providerSelect.value : 'groq' })
             });
             const data = await response.json();
             profileDisplay.classList.remove('hidden');
