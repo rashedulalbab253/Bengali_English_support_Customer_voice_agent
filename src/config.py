@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # Gemini Configuration
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")
-    GEMINI_MODEL: str = "models/gemini-flash-latest"
+    GEMINI_MODEL: str = "gemini-2.0-flash"
     
     class Config:
         env_file = ".env"

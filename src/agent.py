@@ -3,13 +3,14 @@ import traceback
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from src.config import settings
 from src.utils import logger
 
 class CustomerSupportAgent:
-    """Core logic for the AI Customer Support Agent with simple memory (using Gemini)."""
+    """Core logic for the AI Customer Support Agent with simple memory (using Gemini + Google Search Grounding)."""
     
     def __init__(self, api_key: Optional[str] = None):
         # Use provided API key or fallback to settings
@@ -17,10 +18,11 @@ class CustomerSupportAgent:
         if not key:
             raise ValueError("Google API Key is required for Gemini.")
         
-        genai.configure(api_key=key)
+        # Initialize the new Google GenAI client
+        self.client = genai.Client(api_key=key)
         
         # System Instruction for Persona
-        system_instruction = """You are an expert customer support AI for TechGadgets.com, a premium online electronics retailer.
+        self.system_instruction = """You are an expert customer support AI for TechGadgets.com, a premium online electronics retailer.
 
 Language Support:
 - You must respond ONLY in the same language the user uses.
@@ -39,65 +41,107 @@ Your capabilities:
 - Troubleshoot technical issues
 - Answer questions about warranties and shipping
 - Remember conversation context to provide personalized help
+- You have access to Google Search to find up-to-date product information, news, and pricing
 
 Guidelines:
 - Keep responses concise but complete (2-3 sentences ideal)
 - Use a conversational, natural tone
+- When answering about product availability, releases, or current pricing, rely on Google Search results for the most accurate and up-to-date information
 - If you don't have specific information, acknowledge it honestly and offer to help in other ways
 - Always end with a helpful follow-up question or offer when appropriate"""
 
-        self.model = genai.GenerativeModel(
-            model_name=settings.GEMINI_MODEL,
-            system_instruction=system_instruction
-        )
+        self.model_name = settings.GEMINI_MODEL
         self.app_id = settings.APP_ID
+        
+        # Google Search grounding tool
+        self.google_search_tool = types.Tool(
+            google_search=types.GoogleSearch()
+        )
         
         # Simple in-memory storage for conversations
         self.conversations: Dict[str, List[Dict[str, str]]] = {}
-        logger.info("Agent initialized successfully with Gemini.")
+        logger.info("Agent initialized successfully with Gemini + Google Search Grounding.")
 
     def handle_query(self, query: str, user_id: str) -> str:
-        """Handles a customer query by retrieving conversation history and generating a response."""
+        """Handles a customer query using Gemini with Google Search grounding."""
         try:
             logger.info(f"Handling query for user {user_id}: {query[:50]}...")
             
             if user_id not in self.conversations:
                 self.conversations[user_id] = []
             
-            # Gemini-specific history formatting (must start with user and alternate)
-            formatted_history = []
+            # Build conversation history as Content objects for the new SDK
+            history_contents = []
             history_slice = self.conversations[user_id][-10:]
             
             for msg in history_slice:
                 role = "user" if msg["role"] == "user" else "model"
                 # Ensure we start with 'user' and roles alternate
-                if not formatted_history:
-                    if role != "user": continue
-                elif formatted_history[-1]["role"] == role:
-                    # If same role as last, merge content or skip
-                    formatted_history[-1]["parts"][0] += f"\n{msg['content']}"
+                if not history_contents:
+                    if role != "user":
+                        continue
+                elif history_contents[-1].role == role:
+                    # If same role as last, merge content
+                    existing_text = history_contents[-1].parts[0].text
+                    history_contents[-1].parts[0] = types.Part(text=f"{existing_text}\n{msg['content']}")
                     continue
                 
-                formatted_history.append({"role": role, "parts": [msg["content"]]})
+                history_contents.append(
+                    types.Content(
+                        role=role,
+                        parts=[types.Part(text=msg["content"])]
+                    )
+                )
 
-            # Re-verify alternation before starting chat
-            if formatted_history and formatted_history[-1]["role"] == "user":
-                # We need to end with model or send as part of send_message
-                pass 
+            # Add the current user query
+            history_contents.append(
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text=query)]
+                )
+            )
             
-            # Start chat session
-            chat = self.model.start_chat(history=formatted_history)
-            
-            # Simple safety settings
-            safety_settings = {
-                "HARM_CATEGORY_HARASSMENT": "BLOCK_NONE",
-                "HARM_CATEGORY_HATE_SPEECH": "BLOCK_NONE",
-                "HARM_CATEGORY_SEXUALLY_EXPLICIT": "BLOCK_NONE",
-                "HARM_CATEGORY_DANGEROUS_CONTENT": "BLOCK_NONE",
-            }
+            # Configure with Google Search grounding and system instruction
+            config = types.GenerateContentConfig(
+                system_instruction=self.system_instruction,
+                tools=[self.google_search_tool],
+                safety_settings=[
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HARASSMENT",
+                        threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HATE_SPEECH",
+                        threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                        threshold="BLOCK_NONE"
+                    ),
+                ]
+            )
 
-            response = chat.send_message(query, safety_settings=safety_settings)
+            # Generate response with grounding
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=history_contents,
+                config=config,
+            )
+            
             answer = response.text
+            
+            # Log grounding metadata if available
+            if response.candidates and response.candidates[0].grounding_metadata:
+                metadata = response.candidates[0].grounding_metadata
+                if metadata.web_search_queries:
+                    logger.info(f"Google Search queries used: {metadata.web_search_queries}")
+                if metadata.grounding_chunks:
+                    sources = [chunk.web.title for chunk in metadata.grounding_chunks if chunk.web]
+                    logger.info(f"Grounding sources: {sources}")
             
             # Update internal memory
             self.conversations[user_id].append({"role": "user", "content": query})
@@ -112,6 +156,8 @@ Guidelines:
             with open("error.log", "a", encoding="utf-8") as f:
                 f.write(f"\n[{datetime.now()}] ERROR: {str(e)}\n{error_trace}\n")
             
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                return "⚠️ Rate limit exceeded! Your free tier quota is used up. Please wait a few minutes and try again, or enable billing at https://ai.google.dev. (⚠️ আপনার ফ্রি টিয়ার কোটা শেষ হয়ে গেছে। কয়েক মিনিট অপেক্ষা করুন।)"
             if "401" in str(e) or "API_KEY_INVALID" in str(e):
                 return "Error: Invalid Gemini API Key. Please check your key and try again. (ত্রুটি: ভুল Gemini API কী। দয়া করে আপনার কী পরীক্ষা করুন এবং আবার চেষ্টা করুন।)"
             return f"I encountered an error with the AI: {str(e)}. Please check the logs."
@@ -140,7 +186,15 @@ Guidelines:
             - 2 past orders and 2 previous support interactions.
             Return ONLY valid JSON."""
 
-            response = self.model.generate_content(prompt)
+            config = types.GenerateContentConfig(
+                system_instruction=self.system_instruction,
+            )
+
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=config,
+            )
 
             # Clean the response in case Gemini adds markdown formatting
             content = response.text
