@@ -670,3 +670,129 @@ input:checked+.slider:before {
 .hidden {
     display: none !important;
 }
+
+/* --- Mobile Responsiveness --- */
+
+/* Sidebar Overlay */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 90;
+    transition: opacity 0.3s ease;
+    opacity: 0;
+}
+
+.sidebar-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
+/* Hide mobile menu button by default */
+.mobile-menu-btn {
+    display: none;
+    background: transparent;
+    border: none;
+    color: var(--text-main);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    border-radius: 8px;
+    transition: background-color 0.2s;
+}
+
+.mobile-menu-btn:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+@media (max-width: 768px) {
+    .app-container {
+        flex-direction: column;
+        position: relative;
+    }
+
+    /* Sidebar shifts to absolute positioning and hidden by default */
+    .sidebar {
+        position: absolute;
+        top: 0;
+        left: -320px;
+        height: 100vh;
+        width: 300px;
+        max-width: 85vw;
+        transition: left 0.3s ease;
+        z-index: 100;
+        box-shadow: 4px 0 24px rgba(0,0,0,0.1);
+    }
+
+    .sidebar.open {
+        left: 0;
+    }
+
+    .chat-header {
+        padding: 0 1rem;
+    }
+
+    /* Show hamburger icon only on mobile */
+    .mobile-menu-btn {
+        display: flex;
+    }
+
+    .header-credit-text {
+        display: none; /* Hide top credit on mobile to save space */
+    }
+
+    .message {
+        max-width: 90%;
+    }
+
+    .chat-input-container {
+        padding: 1rem;
+    }
+
+    .input-wrapper input {
+        padding: 0.875rem 3.5rem 0.875rem 3.5rem; /* Adjusted for smaller buttons */
+    }
+
+    .btn-send {
+        right: 4px;
+        width: 36px;
+        height: 36px;
+    }
+
+    .btn-mic {
+        left: 4px;
+        width: 36px;
+        height: 36px;
+    }
+
+    /* Modals adjustment for mobile */
+    .modal-content {
+        padding: 1.5rem;
+        max-width: 95vw;
+        max-height: 90vh;
+    }
+
+    .analytics-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .analytics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .header-actions {
+        gap: 0.2rem;
+    }
+
+    .status-indicator {
+        font-size: 0.75rem;
+    }
+}

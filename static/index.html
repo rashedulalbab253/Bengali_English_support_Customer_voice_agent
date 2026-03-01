@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OmniServe AI - Context-Aware Voice Support</title>
-    <link rel="stylesheet" href="/static/style.css?v=2">
+    <link rel="stylesheet" href="/static/style.css?v=3">
     <link
         href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=Inter:wght@400;500;700&display=swap"
         rel="stylesheet">
@@ -14,8 +14,11 @@
 
 <body>
     <div class="app-container">
+        <!-- Sidebar Overlay for Mobile -->
+        <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
         <!-- Sidebar -->
-        <aside class="sidebar">
+        <aside class="sidebar" id="sidebar">
             <div class="brand">
                 <div class="logo-icon">OS</div>
                 <h2>OmniServe <span>AI</span></h2>
@@ -65,9 +68,16 @@
         <!-- Main Chat Area -->
         <main class="chat-area">
             <header class="chat-header">
-                <div class="status-indicator">
-                    <span class="dot"></span>
-                    <span id="agentStatus">Agent Offline</span>
+                <div class="header-left" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <button id="mobileMenuBtn" class="mobile-menu-btn" title="Toggle Menu">
+                        <svg viewBox="0 0 24 24" width="24" height="24">
+                            <path fill="currentColor" d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
+                        </svg>
+                    </button>
+                    <div class="status-indicator">
+                        <span class="dot"></span>
+                        <span id="agentStatus">Agent Offline</span>
+                    </div>
                 </div>
                 <div class="header-credit-text">Developed by Rashedul Albab</div>
                 <div class="header-actions">

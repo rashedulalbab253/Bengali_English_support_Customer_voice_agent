@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const profileDisplay = document.getElementById('profileDisplay');
     const profileJson = document.getElementById('profileJson');
 
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarOverlay = document.getElementById('sidebarOverlay');
+
     const micBtn = document.getElementById('micBtn');
     const autoSpeakCheck = document.getElementById('autoSpeak');
     const languageSelect = document.getElementById('languageSelect');
@@ -399,6 +403,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelector('.close-analytics').addEventListener('click', () => {
         document.getElementById('analyticsModal').classList.add('hidden');
     });
+
+    if (mobileMenuBtn && sidebar && sidebarOverlay) {
+        mobileMenuBtn.addEventListener('click', () => {
+            sidebar.classList.add('open');
+            sidebarOverlay.classList.add('active');
+        });
+
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('active');
+        });
+    }
 
     // Clear chat
     document.getElementById('clearChat').addEventListener('click', () => {
