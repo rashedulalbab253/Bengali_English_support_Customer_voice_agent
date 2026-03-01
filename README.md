@@ -110,4 +110,4 @@ docker-compose up --build
 
 ---
 
-*© 2026 OmniServe AI. Developed with ❤️ by Rashedul Albab.*
+*©  OmniServe AI. Developed with ❤️ by Rashedul Albab.*
